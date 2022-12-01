@@ -67,10 +67,7 @@ def get_version() -> str:
     except FileNotFoundError:
         return internal_version()
 
-    if p.returncode:
-        return internal_version()
-    else:
-        return p.stdout.strip()
+    return internal_version() if p.returncode else p.stdout.strip()
 
 
 __version_info__ = (1, 0, 0, "+git")
@@ -158,9 +155,7 @@ class SqliteCredentials(Credentials):
         LOG.debug("Reading password database in SQLite format")
         self.c.execute("SELECT hostname, encryptedUsername, encryptedPassword, encType "
                        "FROM moz_logins")
-        for i in self.c:
-            # yields hostname, encryptedUsername, encryptedPassword, encType
-            yield i
+        yield from self.c
 
     def done(self):
         """Close the sqlite cursor and database connection
@@ -234,33 +229,49 @@ def find_nss(locations, nssname) -> ct.CDLL:
                 # Restore workdir changed above
                 os.chdir(workdir)
 
-    else:
-        LOG.error("Couldn't find or load '%s'. This library is essential "
-                  "to interact with your Mozilla profile.", nssname)
-        LOG.error("If you are seeing this error please perform a system-wide "
-                  "search for '%s' and file a bug report indicating any "
-                  "location found. Thanks!", nssname)
-        LOG.error("Alternatively you can try launching firefox_decrypt "
-                  "from the location where you found '%s'. "
-                  "That is 'cd' or 'chdir' to that location and run "
-                  "firefox_decrypt from there.", nssname)
+    LOG.error("Couldn't find or load '%s'. This library is essential "
+              "to interact with your Mozilla profile.", nssname)
+    LOG.error("If you are seeing this error please perform a system-wide "
+              "search for '%s' and file a bug report indicating any "
+              "location found. Thanks!", nssname)
+    LOG.error("Alternatively you can try launching firefox_decrypt "
+              "from the location where you found '%s'. "
+              "That is 'cd' or 'chdir' to that location and run "
+              "firefox_decrypt from there.", nssname)
 
-        LOG.error("Please also include the following on any bug report. "
-                  "Errors seen while searching/loading NSS:")
+    LOG.error("Please also include the following on any bug report. "
+              "Errors seen while searching/loading NSS:")
 
-        for target, error in fail_errors:
-            LOG.error("Error when loading %s was %s", target, error)
+    for target, error in fail_errors:
+        LOG.error("Error when loading %s was %s", target, error)
 
-        raise Exit(Exit.FAIL_LOCATE_NSS)
+    raise Exit(Exit.FAIL_LOCATE_NSS)
 
 
 def load_libnss():
     """Load libnss into python using the CDLL interface
     """
-    if SYSTEM == "Windows":
+    if SYSTEM == "Darwin":
+        nssname = "libnss3.dylib"
+        locations = (
+            "",  # Current directory or system lib finder
+            "/usr/local/lib/nss",
+            "/usr/local/lib",
+            "/opt/local/lib/nss",
+            "/sw/lib/firefox",
+            "/sw/lib/mozilla",
+            "/usr/local/opt/nss/lib",  # nss installed with Brew on Darwin
+            "/opt/pkg/lib/nss",  # installed via pkgsrc
+            "/Applications/Firefox.app/Contents/MacOS",  # default manual install location
+            "/Applications/Thunderbird.app/Contents/MacOS",
+            "/Applications/SeaMonkey.app/Contents/MacOS",
+            "/Applications/Waterfox.app/Contents/MacOS",
+        )
+
+    elif SYSTEM == "Windows":
         nssname = "nss3.dll"
-        if SYS64:
-            locations: list[str] = [
+        locations: list[str] = (
+            [
                 "",  # Current directory or system lib finder
                 os.path.expanduser("~\\AppData\\Local\\Mozilla Firefox"),
                 os.path.expanduser("~\\AppData\\Local\\Mozilla Thunderbird"),
@@ -273,8 +284,8 @@ def load_libnss():
                 "C:\\Program Files\\SeaMonkey",
                 "C:\\Program Files\\Waterfox",
             ]
-        else:
-            locations: list[str] = [
+            if SYS64
+            else [
                 "",  # Current directory or system lib finder
                 "C:\\Program Files (x86)\\Mozilla Firefox",
                 "C:\\Program Files (x86)\\Mozilla Thunderbird",
@@ -293,6 +304,7 @@ def load_libnss():
                 "C:\\Program Files\\SeaMonkey",
                 "C:\\Program Files\\Waterfox",
             ]
+        )
 
         # If either of the supported software is in PATH try to use it
         software = ["firefox", "thunderbird", "waterfox", "seamonkey"]
@@ -302,28 +314,11 @@ def load_libnss():
                 nsslocation: str = os.path.join(os.path.dirname(location), nssname)
                 locations.append(nsslocation)
 
-    elif SYSTEM == "Darwin":
-        nssname = "libnss3.dylib"
-        locations = (
-            "",  # Current directory or system lib finder
-            "/usr/local/lib/nss",
-            "/usr/local/lib",
-            "/opt/local/lib/nss",
-            "/sw/lib/firefox",
-            "/sw/lib/mozilla",
-            "/usr/local/opt/nss/lib",  # nss installed with Brew on Darwin
-            "/opt/pkg/lib/nss",  # installed via pkgsrc
-            "/Applications/Firefox.app/Contents/MacOS",  # default manual install location
-            "/Applications/Thunderbird.app/Contents/MacOS",
-            "/Applications/SeaMonkey.app/Contents/MacOS",
-            "/Applications/Waterfox.app/Contents/MacOS",
-        )
-
     else:
         nssname = "libnss3.so"
-        if SYS64:
-            locations = (
-                "",  # Current directory or system lib finder
+        locations = (
+            (
+                "",
                 "/usr/lib64",
                 "/usr/lib64/nss",
                 "/usr/lib",
@@ -334,9 +329,9 @@ def load_libnss():
                 "/opt/local/lib/nss",
                 os.path.expanduser("~/.nix-profile/lib"),
             )
-        else:
-            locations = (
-                "",  # Current directory or system lib finder
+            if SYS64
+            else (
+                "",
                 "/usr/lib",
                 "/usr/lib/nss",
                 "/usr/lib32",
@@ -349,6 +344,7 @@ def load_libnss():
                 "/opt/local/lib/nss",
                 os.path.expanduser("~/.nix-profile/lib"),
             )
+        )
 
     # If this succeeds libnss was loaded
     return find_nss(locations, nssname)
@@ -412,12 +408,12 @@ class NSSProxy:
                 return result.decode(DEFAULT_ENCODING)
             res.errcheck = _decode
 
-        setattr(self, "_" + name, res)
+        setattr(self, f"_{name}", res)
 
     def initialize(self, profile: str):
         # The sql: prefix ensures compatibility with both
         # Berkley DB (cert8) and Sqlite (cert9) dbs
-        profile_path = "sql:" + profile
+        profile_path = f"sql:{profile}"
         LOG.debug("Initializing NSS with profile '%s'", profile_path)
         err_status: int = self._NSS_Init(profile_path)
         LOG.debug("Initializing NSS returned %s", err_status)
@@ -720,11 +716,7 @@ class PassOutputFormat(OutputFormat):
             {"address": {"login": "password", ...}, ...}
         """
         LOG.info("Exporting credentials to password store")
-        if self.prefix:
-            prefix = f"{self.prefix}/"
-        else:
-            prefix = self.prefix
-
+        prefix = f"{self.prefix}/" if self.prefix else self.prefix
         LOG.debug("Using pass prefix '%s'", prefix)
 
         for address in self.to_export:
@@ -812,17 +804,15 @@ def ask_password(profile: str, interactive: bool) -> str:
     Prompt for profile password
     """
     passwd: str
-    passmsg = f"\nMaster Password for profile {profile}: "
-
     if sys.stdin.isatty() and interactive:
-        passwd = getpass(passmsg)
+        passmsg = f"\nMaster Password for profile {profile}: "
+
+        return getpass(passmsg)
     else:
         sys.stderr.write("Reading Master password from standard input:\n")
         sys.stderr.flush()
         # Ability to read the password from stdin (echo "pass" | ./firefox_...)
-        passwd = sys.stdin.readline().rstrip("\n")
-
-    return passwd
+        return sys.stdin.readline().rstrip("\n")
 
 
 def read_profiles(basepath):
@@ -859,18 +849,17 @@ def get_profile(basepath: str, interactive: bool, choice: Optional[str], list_pr
         profiles: ConfigParser = read_profiles(basepath)
 
     except Exit as e:
-        if e.exitcode == Exit.MISSING_PROFILEINI:
-            LOG.warning("Continuing and assuming '%s' is a profile location", basepath)
-            profile = basepath
+        if e.exitcode != Exit.MISSING_PROFILEINI:
+            raise
+        LOG.warning("Continuing and assuming '%s' is a profile location", basepath)
+        profile = basepath
 
-            if list_profiles:
-                LOG.error("Listing single profiles not permitted.")
-                raise
+        if list_profiles:
+            LOG.error("Listing single profiles not permitted.")
+            raise
 
-            if not os.path.isdir(profile):
-                LOG.error("Profile location '%s' is not a directory", profile)
-                raise
-        else:
+        if not os.path.isdir(profile):
+            LOG.error("Profile location '%s' is not a directory", profile)
             raise
     else:
         if list_profiles:

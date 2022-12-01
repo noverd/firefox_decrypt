@@ -16,17 +16,14 @@ def _color(text, c):
     """
     Add color on the keyword that identifies the state of the test
     """
-    if sys.stdout.isatty():
-        clear = "\033[0m"
-
-        colors = {
-            "red": "\033[1m\033[91m",
-            "yellow": "\033[1m\033[93m",
-            "green": "\033[1m\033[92m",
-        }
-        return colors[c] + text + clear
-    else:
+    if not sys.stdout.isatty():
         return text
+    colors = {
+        "red": "\033[1m\033[91m",
+        "yellow": "\033[1m\033[93m",
+        "green": "\033[1m\033[92m",
+    }
+    return colors[c] + text + "\033[0m"
 
 
 class TAPTestResult(unittest.result.TestResult):
@@ -43,13 +40,12 @@ class TAPTestResult(unittest.result.TestResult):
         doc_first_line = test.shortDescription()
         if self.descriptions and doc_first_line:
             return doc_first_line
+        try:
+            method = test._testMethodName
+        except AttributeError:
+            return "Preparation error on: {0}".format(test.description)
         else:
-            try:
-                method = test._testMethodName
-            except AttributeError:
-                return "Preparation error on: {0}".format(test.description)
-            else:
-                return "{0} ({1})".format(method, test.__class__.__name__)
+            return "{0} ({1})".format(method, test.__class__.__name__)
 
     def startTestRun(self):
         self.stream.writeln("1..{0}".format(self.total_tests))
@@ -76,7 +72,7 @@ class TAPTestResult(unittest.result.TestResult):
             if line.startswith("#"):
                 stream.write(line)
             else:
-                stream.write("# " + line)
+                stream.write(f"# {line}")
 
         if not line.endswith('\n'):
             stream.write('\n')
@@ -117,16 +113,16 @@ class TAPTestResult(unittest.result.TestResult):
             exception_name = exception.__name__
             msg = str(msg)
 
-        trace_msg = ""
-
         # Extract line where error happened for easier debugging
         trace = traceback.extract_tb(tb)
-        # Iterate from the end and stop on first match
-        for t in trace[::-1]:
-            # t = (filename, line_number, function_name, raw_line)
-            if t[2].startswith("test"):
-                trace_msg = " on file {0} line {1} in {2}: '{3}'".format(*t)
-                break
+        trace_msg = next(
+            (
+                " on file {0} line {1} in {2}: '{3}'".format(*t)
+                for t in trace[::-1]
+                if t[2].startswith("test")
+            ),
+            "",
+        )
 
         # Retrieve the name of the file containing the test
         filename = os.path.basename(inspect.getfile(test.__class__))

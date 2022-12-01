@@ -16,10 +16,7 @@ from queue import Queue, Empty
 
 TIMEOUT = .2
 
-if platform.system() == "Windows":
-    CMD = ["python3"]
-else:
-    CMD = []
+CMD = ["python3"] if platform.system() == "Windows" else []
 
 
 def comment(text):
@@ -27,9 +24,9 @@ def comment(text):
     for line in text.split("\n"):
         if line.strip():  # skip blank or space-only lines
             if line.startswith("ok") or line.startswith("not ok"):
-                line = "# (original state) " + line
+                line = f"# (original state) {line}"
             elif not line.startswith("# "):
-                line = "# " + line
+                line = f"# {line}"
 
             newtext.append(line)
 
@@ -116,10 +113,16 @@ class TestRunner(object):
             Thread(target=run_test, args=(self._serialq, self._outputq, "Serial"))
         )
         # Parallel threads
-        self.threads.extend([
-            Thread(target=run_test, args=(self._parallelq, self._outputq, "Parallel"))
-            for i in range(cpu_count())
-        ])
+        self.threads.extend(
+            [
+                Thread(
+                    target=run_test,
+                    args=(self._parallelq, self._outputq, "Parallel"),
+                )
+                for _ in range(cpu_count())
+            ]
+        )
+
         log.info("Spawned %s threads to run tests", len(self.threads))
 
     def _start_threads(self):
@@ -147,21 +150,15 @@ class TestRunner(object):
         # We are dealing with some binary tests though.
         with open(test, 'rb') as fh:
             header = fh.read(100).split(b"\n")
-            if (len(header) >= 2 and (b"/usr/bin/env python3" in header[0] or
-                                      b"bash_tap" in header[1])):
-                return True
-            else:
-                return False
+            return len(header) >= 2 and (
+                (b"/usr/bin/env python3" in header[0] or b"bash_tap" in header[1])
+            )
 
     def _get_remaining_tests(self):
         return self._parallelq.qsize() + self._serialq.qsize()
 
     def is_running(self):
-        for thread in self.threads:
-            if thread.is_alive():
-                return True
-
-        return False
+        return any(thread.is_alive() for thread in self.threads)
 
     def start(self):
         self._find_tests()

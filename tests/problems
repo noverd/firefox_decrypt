@@ -11,17 +11,14 @@ def color(text, c):
     """
     Add color on the keyword that identifies the state of the test
     """
-    if sys.stdout.isatty():
-        clear = "\033[0m"
-
-        colors = {
-            "red": "\033[1m\033[91m",
-            "yellow": "\033[1m\033[93m",
-            "green": "\033[1m\033[92m",
-        }
-        return colors[c] + text + clear
-    else:
+    if not sys.stdout.isatty():
         return text
+    colors = {
+        "red": "\033[1m\033[91m",
+        "yellow": "\033[1m\033[93m",
+        "green": "\033[1m\033[92m",
+    }
+    return colors[c] + text + "\033[0m"
 
 
 def parse_args():
@@ -60,17 +57,11 @@ if __name__ == "__main__":
     with open(cmd_args.tapfile) as fh:
         for line in fh:
             if start is None:
-                # First line contains the starting timestamp
-                match = timestamp.match(line)
-                if match:
-                    start = float(match.group(1))
-                else:
-                    start = 0
+                start = float(match.group(1)) if (match := timestamp.match(line)) else 0
                 continue
 
-            match = file.match(line)
-            if match:
-                filename = match.group(1)
+            if match := file.match(line):
+                filename = match[1]
 
             if line.startswith("ok "):
                 passed[filename] += 1
@@ -87,28 +78,22 @@ if __name__ == "__main__":
             if line.startswith("# UNEXPECTED_SUCCESS:"):
                 unexpected[filename] += 1
 
-        # Last line contains the ending timestamp
-        match = timestamp.match(line)
-        if match:
-            stop = float(match.group(1))
-        else:
-            stop = 0
-
+        stop = float(match.group(1)) if (match := timestamp.match(line)) else 0
     if start is None:
         start = 0
 
     v = "{0:>5d}"
-    passed_str = "Passed:" + pad(24)
+    passed_str = f"Passed:{pad(24)}"
     passed_int = v.format(sum(passed.values()))
-    error_str = "Failed:" + pad(24)
+    error_str = f"Failed:{pad(24)}"
     error_int = v.format(sum(errors.values()))
-    unexpected_str = "Unexpected successes:" + pad(10)
+    unexpected_str = f"Unexpected successes:{pad(10)}"
     unexpected_int = v.format(sum(unexpected.values()))
-    skipped_str = "Skipped:" + pad(23)
+    skipped_str = f"Skipped:{pad(23)}"
     skipped_int = v.format(sum(skipped.values()))
-    expected_str = "Expected failures:" + pad(13)
+    expected_str = f"Expected failures:{pad(13)}"
     expected_int = v.format(sum(expected.values()))
-    runtime_str = "Runtime:" + pad(20)
+    runtime_str = f"Runtime:{pad(20)}"
     runtime_int = "{0:>8.2f} seconds".format(stop - start)
 
     if cmd_args.summary:

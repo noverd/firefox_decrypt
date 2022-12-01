@@ -55,7 +55,7 @@ class Test:
             output = self.run(cmd, stdin=stdin, stderr=stderr, workdir=workdir)
         except CalledProcessError as e:
             if e.returncode != returncode:
-                raise ValueError("Expected exit code {} but saw {}".format(returncode, e.returncode))
+                raise ValueError(f"Expected exit code {returncode} but saw {e.returncode}")
             else:
                 output = e.stdout
 
@@ -66,13 +66,13 @@ class Test:
             return fh.read()
 
     def get_script(self):
-        return [self.interpreter, "{}/../firefox_decrypt.py".format(self.testdir)]
+        return [self.interpreter, f"{self.testdir}/../firefox_decrypt.py"]
 
     def get_test_data(self):
         return os.path.join(self.testdir, "test_data")
 
     def _get_dir_data(self, subdir, target):
-        with open(os.path.join(self.get_test_data(), subdir, "{}.{}".format(target, subdir[:-1]))) as fh:
+        with open(os.path.join(self.get_test_data(), subdir, f"{target}.{subdir[:-1]}")) as fh:
             return fh.read()
 
     def get_user_data(self, target):
@@ -115,8 +115,5 @@ class Test:
 
 
 lib = Test()
-
-if __name__ == "__main__":
-    pass
 
 # vim: ai sts=4 et sw=4
